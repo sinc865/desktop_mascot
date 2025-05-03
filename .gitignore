@@ -2,3 +2,4 @@
 data/secret.key
 data/credentials.json
 data/memo.txt
+.python-version
