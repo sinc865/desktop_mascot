@@ -165,7 +165,9 @@ class BubbleWindow(WindowBase):
         self.like_button_pressed = False
 
         self.canvas.delete("all")
-        response = self.client.get_timeline()
+        # response = self.client.get_timeline()
+        response = self._safe_timeline()
+
         rand_int = random.randint(0, len(response.feed) - 1)
 
         print("response_len", len(response.feed))
@@ -245,6 +247,32 @@ class BubbleWindow(WindowBase):
             self.window_height = 10 + self.label_height + 20 + self.image_height + 26
 
         self.set_balloons()
+
+    # windows/bubble_window.py から抜粋
+    from atproto_client.exceptions import ModelError
+
+    def _safe_timeline(self, limit: int = 50):
+        """
+        1) 通常の strict=True で試す
+        2) ModelError → strict 検証を完全に回避した RAW 版で再取得
+        """
+        try:
+            return self.client.get_timeline(limit=limit)  # strict=True
+        except ModelError as e:
+            print("strict mode failed, switch to raw:", e)
+
+            # ---- RAW で取る。embed.video も dict のまま乗るだけ ----
+            raw = self.client.app.bsky.feed.get_timeline_raw(  # ← ★ポイント★
+                params={"limit": limit},
+            )
+
+            # 必要なのは .feed 部分だけなので整形して返す
+            # raw は dict: {"feed":[{...}, ...], "cursor": "..."}
+            class _Dummy:  # 簡易ラッパ
+                def __init__(self, d):
+                    self.feed, self.cursor = d["feed"], d.get("cursor")
+
+            return _Dummy(raw)
 
     def update_text_incrementally(self):
         if self.current_text_index < len(self.full_text):
