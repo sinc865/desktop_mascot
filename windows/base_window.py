@@ -1,55 +1,101 @@
-from abc import ABC, abstractmethod
+from __future__ import annotations
+
+from abc import ABC
 import tkinter as tk
+from typing import List, Tuple
+
 from .enum import Event
+
+__all__ = ["WindowBase"]
 
 
 class WindowBase(ABC):
-    def __init__(self, root, title, width, height, x_pos=0, y_pos=0, syncronized_windows=[], topmost_flag=False):
-        self.root = root
-        self.window = tk.Toplevel(root)
+    """Foundation for the memo, character, bubble, and hand overlay windows."""
+
+    # ---------------------------------------------------------------------
+    # Construction helpers
+    # ---------------------------------------------------------------------
+
+    def __init__(
+        self,
+        root: tk.Tk,
+        title: str,
+        width: int,
+        height: int,
+        x_pos: int = 0,
+        y_pos: int = 0,
+        syncronized_windows: List["WindowBase"] | None = None,
+        topmost_flag: bool = False,
+    ) -> None:
+        # Main tkinter handles
+        self.root: tk.Tk = root
+        self.window: tk.Toplevel = tk.Toplevel(root)
         self.window.geometry(f"{width}x{height}+{x_pos}+{y_pos}")
-        self.title = title
+        self.title: str = title
         self.window.title(title)
         self.window.wm_attributes("-topmost", topmost_flag)
         self.window.overrideredirect(True)
-        self.current_alpha = 1.0
-        self.observers = []
-        self.relative_pos = []
-        self.syncronized_windows = []
-        self.origin = (0, 0)
-        self.originText = (0, 0)
-        self.isMouseDown = False
-        self.isMouseDownText = False
-        self.translucent = False
 
-        self.add_syncronized_window(syncronized_windows)
+        # Rendering state
+        self.current_alpha: float = 1.0
+        self.translucent: bool = False
+
+        # Observer pattern
+        self.observers: list[WindowBase] = []
+
+        # Follower‑window support
+        self.syncronized_windows: list[WindowBase] = []
+        self.relative_pos: list[Tuple[int, int]] = []
+
+        # Dragging helpers
+        self.origin: Tuple[int, int] = (0, 0)
+        self.originText: Tuple[int, int] = (0, 0)
+        self.isMouseDown: bool = False
+        self.isMouseDownText: bool = False
+
+        # Register any initial follower windows and bind common events
+        self.add_syncronized_window(syncronized_windows or [])
         self.setup_window()
 
-    def add_observer(self, observers: list):
-        for observer in observers:
-            self.observers.append(observer)
+    # ------------------------------------------------------------------
+    # Observer pattern helpers
+    # ------------------------------------------------------------------
 
-    def notify_observers(self, event):
+    def add_observer(self, observers: List["WindowBase"]) -> None:
+        """Register *observers* for event notifications."""
+        self.observers.extend(observers)
+
+    def notify_observers(self, event: Event) -> None:
+        """Broadcast *event* to all observers."""
         for observer in self.observers:
             observer.update(event)
 
-    def update(self, event):
+    def update(self, event: Event) -> None:  # noqa: D401
+        """Default handler for incoming *event* messages."""
         if event == Event.TRUNSLUCENT:
             self.turn_translucent()
 
-    def add_syncronized_window(self, window_list: list):
-        # メインウィンドウの位置を取得
+    # ------------------------------------------------------------------
+    # Follower‑window management
+    # ------------------------------------------------------------------
+
+    def add_syncronized_window(self, window_list: List["WindowBase"]) -> None:
+        """Attach *window_list* so they move in concert with this window."""
         main_geom = self.window.geometry().split("+")
         main_x, main_y = int(main_geom[1]), int(main_geom[2])
+
         for window in window_list:
             self.syncronized_windows.append(window)
-            # サブウィンドウの位置を取得
             sub_geom = window.window.geometry().split("+")
             sub_x, sub_y = int(sub_geom[1]), int(sub_geom[2])
-            # 相対位置を計算して保存
             self.relative_pos.append((sub_x - main_x, sub_y - main_y))
 
-    def setup_window(self):
+    # ------------------------------------------------------------------
+    # Window‑level event wiring
+    # ------------------------------------------------------------------
+
+    def setup_window(self) -> None:
+        """Bind generic mouse/keyboard focus callbacks."""
         self.window.bind("<Button-1>", self.mouse_down)
         self.window.bind("<Double-1>", self.mouse_double_click)
         self.window.bind("<Button-3>", self.mouse_right_down)
@@ -60,75 +106,90 @@ class WindowBase(ABC):
         self.window.bind("<Enter>", self.on_mouse_enter)
         self.window.bind("<Leave>", self.on_mouse_leave)
 
-    def mouse_double_click(self, event):
+    # ------------------------------------------------------------------
+    # Event callback stubs (sub‑classes may override as needed)
+    # ------------------------------------------------------------------
+
+    def mouse_double_click(self, event: tk.Event) -> None:  # noqa: U100
         pass
 
-    def mouse_right_down(self, event):
+    def mouse_right_down(self, event: tk.Event) -> None:  # noqa: U100
         self.notify_observers(Event.TRUNSLUCENT)
         self.turn_translucent()
 
-    def turn_translucent(self):
-        if self.current_alpha == 0:  # 透明度が0の場合は何もしない
+    def turn_translucent(self) -> None:
+        """Toggle between opaque (1.0) and translucent (0.5) alpha."""
+        if self.current_alpha == 0:
             return
-        if self.translucent:
-            self.window.attributes("-alpha", 1.0)
-            self.current_alpha = 1.0
-            self.translucent = False
-        else:
-            self.window.attributes("-alpha", 0.5)
-            self.current_alpha = 0.5
-            self.translucent = True
+        self.translucent = not self.translucent
+        self.current_alpha = 0.5 if self.translucent else 1.0
+        self.window.attributes("-alpha", self.current_alpha)
 
-    def on_mouse_enter(self, event):
+    # ----- Optional overrides for sub‑classes --------------------------------
+
+    def on_mouse_enter(self, event: tk.Event) -> None:  # noqa: U100
         pass
 
-    def on_mouse_leave(self, event):
+    def on_mouse_leave(self, event: tk.Event) -> None:  # noqa: U100
         pass
 
-    def on_focus_in(self, event):
+    def on_focus_in(self, event: tk.Event) -> None:  # noqa: U100
         pass
 
-    def on_focus_out(self, event):
+    def on_focus_out(self, event: tk.Event) -> None:  # noqa: U100
         pass
 
-    def on_click(self, event):
+    def on_click(self, event: tk.Event) -> None:  # noqa: U100
         pass
 
-    def mouse_down(self, e):
+    # ------------------------------------------------------------------
+    # Dragging logic
+    # ------------------------------------------------------------------
+
+    def mouse_down(self, e: tk.Event) -> None:
         if e.num == 1:
             self.origin = (e.x, e.y)
             self.isMouseDown = True
 
-    def mouse_release(self, e):
+    def mouse_release(self, e: tk.Event) -> None:  # noqa: N802
         self.isMouseDown = False
 
-    def mouse_move(self, e):
+    def mouse_move(self, e: tk.Event) -> None:  # noqa: N802
         if self.isMouseDown:
-            buf = self.window.geometry().split("+")
-            self.setPos(
-                e.x - self.origin[0] + int(buf[1]),
-                e.y - self.origin[1] + int(buf[2]),
-            )
+            geom = self.window.geometry().split("+")
+            new_x = e.x - self.origin[0] + int(geom[1])
+            new_y = e.y - self.origin[1] + int(geom[2])
+
+            self.setPos(new_x, new_y)
             self.syncSubWindow(e.x - self.origin[0], e.y - self.origin[1])
 
-    def syncSubWindow(self, dx, dy):
-        # sub_window: WindowBase
-        for sub_window in self.syncronized_windows:
-            buf = sub_window.window.geometry().split("+")
-            current_x = int(buf[1])
-            current_y = int(buf[2])
+    # ------------------------------------------------------------------
+    # Follower window movement helpers
+    # ------------------------------------------------------------------
 
-            new_x = current_x + dx
-            new_y = current_y + dy
+    def syncSubWindow(self, dx: int, dy: int) -> None:  # noqa: N802
+        for sub_window in self.syncronized_windows:
+            geom = sub_window.window.geometry().split("+")
+            new_x = int(geom[1]) + dx
+            new_y = int(geom[2]) + dy
             sub_window.setPos(new_x, new_y)
 
-    def mouseDownText(self, e):
+    # ------------------------------------------------------------------
+    # Text dragging helpers (used by memo window)
+    # ------------------------------------------------------------------
+
+    def mouseDownText(self, e: tk.Event) -> None:  # noqa: N802
         if e.num == 1:
             self.originText = (e.x, e.y)
             self.isMouseDownText = True
 
-    def mouseReleaseText(self, e):
+    def mouseReleaseText(self, e: tk.Event) -> None:  # noqa: N802
         self.isMouseDownText = False
 
-    def setPos(self, x, y):
-        self.window.geometry("+%s+%s" % (x, y))
+    # ------------------------------------------------------------------
+    # Misc utilities
+    # ------------------------------------------------------------------
+
+    def setPos(self, x: int, y: int) -> None:  # noqa: N802
+        """Move the window to absolute screen coordinates (*x*, *y*)."""
+        self.window.geometry(f"+{x}+{y}")

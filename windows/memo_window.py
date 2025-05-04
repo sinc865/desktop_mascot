@@ -1,141 +1,210 @@
-from .base_window import WindowBase
-import tkinter as tk
-from tkinter import font
-import customtkinter as ctk
-from tkinter import ttk
-from .enum import Event
-import os
+from __future__ import annotations
+
 import re
 import webbrowser
+from pathlib import Path
+import tkinter as tk
+from tkinter import font, ttk  # noqa: F401  # imported for future use / consistency with other windows
+
+import customtkinter as ctk
+
+from .base_window import WindowBase
+from .enum import Event  # noqa: F401  # imported for potential callbacks elsewhere
+
+__all__ = ["MemoWindow"]
 
 
 class MemoWindow(WindowBase):
-    def __init__(self, root, x_pos, y_pos):
-        self.width = 250
-        self.height = 230
-        self.x_pos = x_pos
-        self.y_pos = y_pos
-        self.topmost_flag = True
-        self.file_path = "data/memo.txt"
-        self.auto_save_interval = 5000  # 自動保存の間隔（ミリ秒）
-        super().__init__(root, "メモウィンドウ", 250, 250, x_pos, y_pos, syncronized_windows=[], topmost_flag=True)
+    """A memo window with autosave, checkboxes, and clickable URLs."""
 
-    def on_focus_in(self, event):
-        self.syncronized_windows[0].window.lift(self.window)
+    # ------------------------------------------------------------------
+    # class‑level configuration constants
+    # ------------------------------------------------------------------
+    WIDTH: int = 250
+    HEIGHT: int = 230
 
-    def setup_window(self):
-        # 外側に黒色のフレームを追加（角を丸くしない）
-        self.outer_frame = ctk.CTkFrame(self.window, fg_color="#000000", corner_radius=0)
-        self.outer_frame.pack(expand=True, fill=ctk.BOTH)
+    FG_OUTER: str = "#000000"
+    FG_INNER: str = "#FFFFFF"
+    TEXT_FG: str = "#000000"
+    LINK_FG: str = "blue"
+    CHECKED_FG: str = "gray"
 
-        # 内側に白色のフレームを追加しパディングを適用（角を丸くしない）
-        self.inner_frame = ctk.CTkFrame(self.outer_frame, fg_color="#FFFFFF", corner_radius=0)
-        self.inner_frame.pack(expand=True, fill=ctk.BOTH, padx=1, pady=1)
+    AUTOSAVE_MS: int = 5_000  # 5 s
+    FILE_PATH: Path = Path("data/memo.txt")
 
-        # テキストウィジェットを配置
-        self.text_widget = tk.Text(self.inner_frame, wrap=tk.WORD, bd=0, bg="#FFFFFF", fg="#000000")
-        self.text_widget.pack(side=tk.LEFT, expand=True, fill=tk.BOTH, padx=10, pady=10)
+    # pre‑compiled regexes
+    _URL_RE: re.Pattern[str] = re.compile(r"https?://[^\s]+")
+    _UNCHECKED_RE: re.Pattern[str] = re.compile(r"^\[ \] ", re.MULTILINE)
+    _CHECKED_RE: re.Pattern[str] = re.compile(r"^\[x\] ", re.MULTILINE)
 
-        self.text_widget.tag_configure("link", foreground="blue", underline=True)
-        self.text_widget.tag_configure("checked", foreground="gray", overstrike=True)
+    # ------------------------------------------------------------------
+    # construction / lifecycle
+    # ------------------------------------------------------------------
+    def __init__(self, root: tk.Tk, x_pos: int, y_pos: int) -> None:
+        # keep instance attributes that *base_window* might rely on
+        self.width: int = self.WIDTH
+        self.height: int = self.HEIGHT
+        self.x_pos: int = x_pos
+        self.y_pos: int = y_pos
+        self.topmost_flag: bool = True
+        self.file_path: Path = self.FILE_PATH
+        self.auto_save_interval: int = self.AUTOSAVE_MS
 
-        self.text_widget.bind("<KeyRelease>", self.decorate_text)
-        self.text_widget.bind("<Button-1>", self.on_click)
-        self.text_widget.tag_bind("link", "<Double-1>", self.open_link)
+        super().__init__(
+            root,
+            "メモウィンドウ",
+            self.width,
+            self.height,
+            x_pos,
+            y_pos,
+            syncronized_windows=[],
+            topmost_flag=True,
+        )
 
-        self.load_text()
-        self.decorate_text(None)
+    # ------------------------------------------------------------------
+    # window setup & teardown
+    # ------------------------------------------------------------------
+    def setup_window(self) -> None:  # noqa: D401
+        """Construct widgets, load text, and start autosave."""
+        self._build_widgets()
+        self._load_text()
+        self._decorate_text()
 
         super().setup_window()
-        self.auto_save()  # 自動保存を開始
-        self.window.protocol("WM_DELETE_WINDOW", self.on_close)
 
-    def decorate_text(self, event):
+        # periodic tasks & callbacks
+        self._schedule_autosave()
+        self.window.protocol("WM_DELETE_WINDOW", self._on_close)
+
+    def on_focus_in(self, event: tk.Event) -> None:  # noqa: D401
+        if self.syncronized_windows:
+            self.syncronized_windows[0].window.lift(self.window)
+
+    # ------------------------------------------------------------------
+    # widget construction
+    # ------------------------------------------------------------------
+    def _build_widgets(self) -> None:
+        self.outer_frame = ctk.CTkFrame(self.window, fg_color=self.FG_OUTER, corner_radius=0)
+        self.outer_frame.pack(expand=True, fill=ctk.BOTH)
+
+        self.inner_frame = ctk.CTkFrame(self.outer_frame, fg_color=self.FG_INNER, corner_radius=0)
+        self.inner_frame.pack(expand=True, fill=ctk.BOTH, padx=1, pady=1)
+
+        self.text_widget = tk.Text(
+            self.inner_frame,
+            wrap=tk.WORD,
+            bd=0,
+            bg=self.FG_INNER,
+            fg=self.TEXT_FG,
+        )
+        self.text_widget.pack(side=tk.LEFT, expand=True, fill=tk.BOTH, padx=10, pady=10)
+
+        # tag styles
+        self.text_widget.tag_configure("link", foreground=self.LINK_FG, underline=True)
+        self.text_widget.tag_configure("checked", foreground=self.CHECKED_FG, overstrike=True)
+
+        # event bindings
+        self.text_widget.bind("<KeyRelease>", self._decorate_text)
+        self.text_widget.bind("<Button-1>", self._on_click)
+        self.text_widget.tag_bind("link", "<Double-1>", self._open_link)
+
+    # ------------------------------------------------------------------
+    # text decoration helpers
+    # ------------------------------------------------------------------
+    def _decorate_text(self, _event: tk.Event | None = None) -> None:
+        """Apply checkbox & link styling over the entire buffer."""
         content = self.text_widget.get("1.0", tk.END)
+
+        # clear previous tags
         self.text_widget.tag_remove("link", "1.0", tk.END)
+        self.text_widget.tag_remove("checked", "1.0", tk.END)
 
-        self.apply_checkbox(content)  # 先にチェックボックスを適用
-        self.apply_links(content)  # 次にリンクを適用
+        self._apply_checkboxes(content)
+        self._apply_links(content)
 
-    def apply_checkbox(self, content):
-        checkbox_pattern = re.compile(r"^\[ \] (.*)", re.MULTILINE)
-        for match in checkbox_pattern.finditer(content):
-            start, end = match.span(0)
-            self.text_widget.delete(f"1.0+{start}c", f"1.0+{start + 3}c")
-            self.text_widget.insert(f"1.0+{start}c", "☐")
+    def _apply_checkboxes(self, content: str) -> None:
+        """Replace markdown [ ] / [x] with unicode boxes & add strike."""
+        for m in self._UNCHECKED_RE.finditer(content):
+            self._replace_span(m.start(), 3, "☐")
 
-        checkbox_checked_pattern = re.compile(r"^\[x\] (.*)", re.MULTILINE)
-        for match in checkbox_checked_pattern.finditer(content):
-            start, end = match.span(0)
-            self.text_widget.delete(f"1.0+{start}c", f"1.0+{start + 3}c")
-            self.text_widget.insert(f"1.0+{start}c", "☑")
+        for m in self._CHECKED_RE.finditer(content):
+            self._replace_span(m.start(), 3, "☑")
 
-        # 各行について、☑が冒頭にある時、チェックボックス以降のその行に"checked"のtag_addを行う
-        line_start = "1.0"
+        # add strike for checked lines
+        pos = "1.0"
         while True:
-            line_start = self.text_widget.search("☑", line_start, stopindex=tk.END)
-            if not line_start:
+            pos = self.text_widget.search("☑", pos, stopindex=tk.END)
+            if not pos:
                 break
-            line_end = self.text_widget.index(f"{line_start} lineend")
-            self.text_widget.tag_add("checked", f"{line_start} + 2c", line_end)
-            line_start = line_end
+            line_end = self.text_widget.index(f"{pos} lineend")
+            self.text_widget.tag_add("checked", f"{pos} + 2c", line_end)
+            pos = line_end
 
-    def apply_links(self, content):
-        url_pattern = re.compile(r"(https?://[^\s]+)")
-        for match in url_pattern.finditer(content):
-            start, end = match.span(0)
-            self.text_widget.tag_add("link", f"1.0+{start}c", f"1.0+{end}c")
+    def _apply_links(self, content: str) -> None:
+        for m in self._URL_RE.finditer(content):
+            self.text_widget.tag_add("link", f"1.0+{m.start()}c", f"1.0+{m.end()}c")
 
-    def open_link(self, event):
-        index = self.text_widget.index(f"@{event.x},{event.y}")
-        start = self.text_widget.search("https://", index, backwards=True, stopindex="1.0", regexp=True)
-        end = self.text_widget.search(r"\s", start, stopindex=tk.END, regexp=True)
-        if not end:
-            end = tk.END
-        url = self.text_widget.get(start, end)
-        webbrowser.open(url)
-
-    def on_click(self, event):
-        index = self.text_widget.index(f"@{event.x},{event.y}")
-        line_start = f"{index.split('.')[0]}.0"
-        line_end = f"{index.split('.')[0]}.end"
-        line_text = self.text_widget.get(line_start, line_end)
+    # ------------------------------------------------------------------
+    # click / URL handling
+    # ------------------------------------------------------------------
+    def _on_click(self, event: tk.Event) -> None:
+        idx = self.text_widget.index(f"@{event.x},{event.y}")
+        line_start = f"{idx.split('.')[0]}.0"
+        line_text = self.text_widget.get(line_start, f"{line_start} lineend")
 
         if line_text.startswith("☐ "):
-            self.toggle_checkbox(line_start, "☐ ", "☑ ")
+            self._toggle_checkbox(line_start, "☐ ", "☑ ")
         elif line_text.startswith("☑ "):
-            self.toggle_checkbox(line_start, "☑ ", "☐ ")
+            self._toggle_checkbox(line_start, "☑ ", "☐ ")
 
-        self.decorate_text(None)
+        self._decorate_text()
 
-    def toggle_checkbox(self, line_start, old_symbol, new_symbol):
-        self.text_widget.delete(line_start, f"{line_start}+2c")
-        self.text_widget.insert(line_start, new_symbol)
-        if new_symbol == "☑":
-            self.text_widget.tag_add("checked", f"{line_start} + 2c", f"{line_start} lineend")
-        else:
-            self.text_widget.tag_remove("checked", f"{line_start} + 2c", f"{line_start} lineend")
+    def _toggle_checkbox(self, line_start: str, old: str, new: str) -> None:
+        self.text_widget.delete(line_start, f"{line_start}+{len(old)}c")
+        self.text_widget.insert(line_start, new)
 
-    def mouse_move(self, event):
+    def _open_link(self, event: tk.Event) -> None:
+        idx = self.text_widget.index(f"@{event.x},{event.y}")
+        start = self.text_widget.search("https://", idx, backwards=True, stopindex="1.0", regexp=True)
+        if start:
+            end = self.text_widget.search(r"\s", start, stopindex=tk.END, regexp=True) or tk.END
+            url = self.text_widget.get(start, end)
+            webbrowser.open(url)
+
+    # ------------------------------------------------------------------
+    # autosave & file I/O
+    # ------------------------------------------------------------------
+    def _schedule_autosave(self) -> None:
+        self._save_text()
+        self.window.after(self.auto_save_interval, self._schedule_autosave)
+
+    def _save_text(self) -> None:
+        self.file_path.parent.mkdir(parents=True, exist_ok=True)
+        self.file_path.write_text(self.text_widget.get("1.0", tk.END), encoding="utf-8")
+
+    def _load_text(self) -> None:
+        if self.file_path.exists():
+            self.text_widget.insert("1.0", self.file_path.read_text(encoding="utf-8"))
+
+    # ------------------------------------------------------------------
+    # utility
+    # ------------------------------------------------------------------
+    def _replace_span(self, start_offset: int, length: int, replacement: str) -> None:
+        self.text_widget.delete(f"1.0+{start_offset}c", f"1.0+{start_offset + length}c")
+        self.text_widget.insert(f"1.0+{start_offset}c", replacement)
+
+    # ------------------------------------------------------------------
+    # graceful shutdown
+    # ------------------------------------------------------------------
+    def _on_close(self) -> None:
+        self._save_text()
+        self.window.destroy()
+
+    # ------------------------------------------------------------------
+    # optional overrides (kept for consistency)
+    # ------------------------------------------------------------------
+    def mouse_move(self, event):  # noqa: D401
         pass
 
-    def update(self, event):
+    def update(self, event):  # noqa: D401
         super().update(event)
-
-    def save_text(self):
-        content = self.text_widget.get("1.0", tk.END)
-        with open(self.file_path, "w", encoding="utf-8") as file:
-            file.write(content)
-
-    def load_text(self):
-        if os.path.exists(self.file_path):
-            with open(self.file_path, "r", encoding="utf-8") as file:
-                content = file.read()
-                self.text_widget.insert("1.0", content)
-
-    def auto_save(self):
-        self.save_text()
-        self.window.after(self.auto_save_interval, self.auto_save)
-
-    def on_close(self):
-        self.save_text()
