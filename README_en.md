@@ -15,24 +15,31 @@
 - Supported OS: Windows 10
 - python 3.13
 
-## Installation
+## Setup
 
-1. Clone the repository:
-    ```bash
-    https://github.com/ripiripi/desktop_mascot.git
-    cd desktop_mascot
-    ```
+- To use the executable (Recommended):  
 
-2. Set up the environment using [uv](https://docs.astral.sh/uv/getting-started/installation/#__tabbed_1_1):
-    ```bash
-    uv venv              
-    uv sync              
-    ```
+  Download the latest `.zip` from the [Releases page](https://github.com/sinc865/desktop_mascot/releases), extract it, and run `desktop_mascot.exe`.
 
-3. Run the application:
-    ```bash
-    uv run python main.py
-    ```
+- To run from source:
+
+  1. Clone the repository:
+      ```bash
+      git clone https://github.com/sinc865/desktop_mascot.git
+      cd desktop_mascot
+      ```
+
+  2. Set up the environment using [uv](https://docs.astral.sh/uv/getting-started/installation/#__tabbed_1_1):
+      ```bash
+      uv venv              
+      uv sync              
+      ```
+
+  3. Run the application:
+      ```bash
+      uv run python main.py
+      ```
+
 
 ## Usage
 

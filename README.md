@@ -15,24 +15,31 @@
 - 対応OS：Windows 10
 - Pythonバージョン：3.13
 
-## インストール手順
+## セットアップ方法
 
-1. リポジトリをクローン：
-    ```bash
-    git clone https://github.com/ripiripi/desktop_mascot.git
-    cd desktop_mascot
-    ```
+- 実行ファイルを使う場合（おすすめ）： 
 
-2. [uv](https://docs.astral.sh/uv/getting-started/installation/#__tabbed_1_1) で環境を構築：
-    ```bash
-    uv venv              
-    uv sync              
-    ```
+  [リリースページ](https://github.com/sinc865/desktop_mascot/releases) から `.zip` をダウンロードして展開し、`desktop_mascot.exe` を実行
 
-3. アプリケーション実行：
-    ```bash
-    uv run python main.py
-    ```
+- クローンして実行する場合：
+
+  1. リポジトリをクローン：
+      ```bash
+      git clone https://github.com/sinc865/desktop_mascot.git
+      cd desktop_mascot
+      ```
+
+  2. [uv](https://docs.astral.sh/uv/getting-started/installation/#__tabbed_1_1) で環境を構築：
+      ```bash
+      uv venv              
+      uv sync              
+      ```
+
+  3. アプリケーション実行：
+      ```bash
+      uv run python main.py
+      ```
+
 
 ## 使い方
 
