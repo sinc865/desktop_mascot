@@ -125,10 +125,10 @@ class MemoWindow(WindowBase):
     def _apply_checkboxes(self, content: str) -> None:
         """Replace markdown [ ] / [x] with unicode boxes & add strike."""
         for m in self._UNCHECKED_RE.finditer(content):
-            self._replace_span(m.start(), 3, "☐ ")
+            self._replace_span(m.start(), 3, "☐")
 
         for m in self._CHECKED_RE.finditer(content):
-            self._replace_span(m.start(), 3, "☑ ")
+            self._replace_span(m.start(), 3, "☑")
 
         # add strike for checked lines
         pos = "1.0"
