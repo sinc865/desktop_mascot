@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import random
-import threading
 import tkinter as tk
 from pathlib import Path
 from typing import List, Tuple
@@ -13,6 +12,7 @@ from .enum import Event
 
 
 class CharacterWindow(WindowBase):
+    """キャラクター画像を表示し、まばたきアニメーションを行うウィンドウ"""
 
     #: 画像パス
     DEFAULT_IMAGE = Path("./assets/image/tekku_0.png")
@@ -21,6 +21,10 @@ class CharacterWindow(WindowBase):
     #: まばたき間隔の候補（秒）とその確率
     BLINK_INTERVALS = [1, 2, 3, 4, 5]
     BLINK_PROBS = [0.45, 0.25, 0.20, 0.08, 0.02]
+
+    # ---- まばたきフレーム ---- #
+    BLINK_SEQUENCE = [0, 1, 2, 1, 0]
+    BLINK_TIMES = [0.08, 0.06, 0.05, 0.06, 0.08]  # 秒
 
     def __init__(self, root, syncronized_windows: List[WindowBase], x_pos: int, y_pos: int):
         # ウィンドウサイズ（画像リサイズ上限）
@@ -54,8 +58,8 @@ class CharacterWindow(WindowBase):
         self.current_image_index = 0
         self._update_image_visibility()
 
-        # ---------- まばたきタイマー ---------- #
-        self.blink_timer: threading.Timer | None = None
+        # ---------- まばたきタイマー（after 版） ---------- #
+        self.blink_timer: int | None = None  # after() の戻り値（ID）を保持
         self._schedule_blink()
 
         # memo_window を常に手前に（同期リストの先頭想定）
@@ -66,7 +70,7 @@ class CharacterWindow(WindowBase):
     # 画像関連
     # ------------------------------------------------------------------ #
     def _load_images(self) -> None:
-        """デフォルト + まばたき画像を読み込み、リサイズ後リストへ格納。"""
+        """デフォルト + まばたき画像を読み込み、リサイズ後リストへ格納"""
         self.character_images.clear()
         paths = [self.DEFAULT_IMAGE] + self.BLINK_IMAGES
         for p in paths:
@@ -160,28 +164,30 @@ class CharacterWindow(WindowBase):
             if win.translucent != self.translucent:
                 win.turn_translucent()
 
-    # ---- まばたき ---- #
-    BLINK_SEQUENCE = [0, 1, 2, 1, 0]
-    BLINK_TIMES = [0.08, 0.06, 0.05, 0.06, 0.08]
-
+    # ------------------------------------------------------------------ #
+    # まばたき制御（after ベース）
+    # ------------------------------------------------------------------ #
     def _schedule_blink(self):
-        delay = random.choices(self.BLINK_INTERVALS, self.BLINK_PROBS)[0]
-        self.blink_timer = threading.Timer(delay, self._start_blinking)
-        self.blink_timer.start()
+        """次のまばたきを予約"""
+        delay_sec = random.choices(self.BLINK_INTERVALS, self.BLINK_PROBS)[0]
+        self.blink_timer = self.window.after(int(delay_sec * 1000), self._start_blinking)
 
     def _start_blinking(self):
+        """まばたき開始（相対位置・透過も確認）"""
         self._check_relative_positions()
         self._check_transparency()
         self.blink_index = 0
         self._blink_step()
 
     def _blink_step(self):
+        """1 ステップ分フレームを進め、次をスケジュール"""
         if self.blink_index >= len(self.BLINK_SEQUENCE):
             self._schedule_blink()
             return
+
         self.current_image_index = self.BLINK_SEQUENCE[self.blink_index]
         self._update_image_visibility()
-        delay = self.BLINK_TIMES[self.blink_index]
+
+        delay_sec = self.BLINK_TIMES[self.blink_index]
         self.blink_index += 1
-        self.blink_timer = threading.Timer(delay, self._blink_step)
-        self.blink_timer.start()
+        self.blink_timer = self.window.after(int(delay_sec * 1000), self._blink_step)
