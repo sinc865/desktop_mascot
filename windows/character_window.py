@@ -13,7 +13,6 @@ from .enum import Event
 
 
 class CharacterWindow(WindowBase):
-    """キャラクター画像の表示とまばたき・位置同期を司るウィンドウ."""
 
     #: 画像パス
     DEFAULT_IMAGE = Path("./assets/image/tekku_0.png")

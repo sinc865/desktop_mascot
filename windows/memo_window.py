@@ -1,17 +1,5 @@
 from __future__ import annotations
 
-"""Memo window module.
-
-This widget provides a simple memo pad that supports:
-- autosave every 5 s
-- Markdown‑style checkboxes that can be toggled with a click
-- automatic strike‑through for checked items
-- URL detection & double‑click to open links
-
-The public behaviour/API is **unchanged** compared to the original implementation;
-only internal structure and readability were improved.
-"""
-
 import re
 import webbrowser
 from pathlib import Path
